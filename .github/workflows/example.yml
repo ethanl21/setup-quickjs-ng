@@ -1,0 +1,82 @@
+name: Example QuickJS Workflow
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ethanl21/setup-quickjs-ng@v1
+
+      - name: Verify installation
+        run: |
+          qjs --version
+          qjsc --version
+
+      - name: Run example.js with qjs
+        run: qjs example/example.js
+
+      - name: Compile example.js with qjsc
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            qjsc -o example.exe example/example.js
+          else
+            qjsc -o example example/example.js
+          fi
+
+      - name: Run compiled binary
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./example.exe
+          else
+            ./example
+          fi
+
+      - name: Test ES2023 features
+        run: |
+          cat > es2023.mjs << 'EOF'
+          // Array.findLast
+          const arr = [1, 2, 3];
+          const last = arr.findLast(x => x > 1);
+          console.assert(last === 3);
+
+          // Top-level await
+          const value = await Promise.resolve(42);
+          console.assert(value === 42);
+
+          // Array.toSorted
+          const sorted = [3, 1, 2].toSorted();
+          console.assert(sorted[0] === 1 && sorted[2] === 3);
+
+          // Record.prototype.entries
+          const obj = { a: 1, b: 2 };
+          const entries = Object.entries(obj);
+          console.assert(entries.length === 2);
+
+          print("All ES2023 tests passed!");
+          EOF
+          qjs es2023.mjs
+        shell: bash
+
+  test-specific-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ethanl21/setup-quickjs-ng@v1
+        with:
+          version: v0.9.0
+
+      - name: Verify version
+        run: |
+          echo "Testing with specific version v0.9.0"
+          qjs --version

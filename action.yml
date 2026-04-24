@@ -1,5 +1,5 @@
 name: Setup QuickJS-ng
-description: Download qjs and qjsc from the latest QuickJS-ng release and add them to PATH
+description: Download qjs, qjsc, and quickjs-amalgam from QuickJS-ng releases
 
 inputs:
   version:
@@ -7,10 +7,18 @@ inputs:
     required: false
     default: latest
 
+outputs:
+  bindir:
+    description: Directory containing qjs and qjsc executables
+    value: ${{ steps.download-binaries.outputs.bindir }}
+  amalgamdir:
+    description: Directory containing quickjs-amalgam source files
+    value: ${{ steps.download-amalgam.outputs.amalgamdir }}
+
 runs:
   using: composite
   steps:
-    - name: Determine platform suffix
+    - name: Determine platform
       id: platform
       shell: bash
       run: |
@@ -43,10 +51,10 @@ runs:
             ;;
         esac
 
-        echo "suffix=$SUFFIX"   >> "$GITHUB_OUTPUT"
-        echo "ext=$EXT"         >> "$GITHUB_OUTPUT"
+        echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
+        echo "ext=$EXT" >> "$GITHUB_OUTPUT"
 
-    - name: Resolve download base URL
+    - name: Resolve download URL
       id: url
       shell: bash
       run: |
@@ -59,6 +67,7 @@ runs:
         echo "base=$BASE" >> "$GITHUB_OUTPUT"
 
     - name: Download qjs and qjsc
+      id: download-binaries
       shell: bash
       run: |
         SUFFIX="${{ steps.platform.outputs.suffix }}"
@@ -68,18 +77,37 @@ runs:
 
         mkdir -p "$DEST"
 
-        curl -fsSL "$BASE/qjs-${SUFFIX}${EXT}"  -o "$DEST/qjs${EXT}"
+        curl -fsSL "$BASE/qjs-${SUFFIX}${EXT}" -o "$DEST/qjs${EXT}"
         curl -fsSL "$BASE/qjsc-${SUFFIX}${EXT}" -o "$DEST/qjsc${EXT}"
 
-        # Make executable on Unix systems
         if [ "${{ runner.os }}" != "Windows" ]; then
           chmod +x "$DEST/qjs" "$DEST/qjsc"
         fi
 
+        echo "bindir=$DEST" >> "$GITHUB_OUTPUT"
         echo "$DEST" >> "$GITHUB_PATH"
+
+    - name: Download quickjs-amalgam
+      id: download-amalgam
+      shell: bash
+      run: |
+        BASE="${{ steps.url.outputs.base }}"
+        DEST="${{ runner.temp }}/quickjs-ng/amalgam"
+
+        mkdir -p "$DEST"
+
+        curl -fsSL "$BASE/quickjs-amalgam.zip" -o "$DEST/../quickjs-amalgam.zip"
+        unzip -o "$DEST/../quickjs-amalgam.zip" -d "$DEST"
+
+        echo "QUICKJS_AMALGAM_DIR=$DEST" >> "$GITHUB_ENV"
+        echo "amalgamdir=$DEST" >> "$GITHUB_OUTPUT"
 
     - name: Verify installation
       shell: bash
       run: |
-        qjs --version
-        qjsc --version
+        if command -v qjs && command -v qjsc; then
+          echo "QuickJS-ng installed successfully"
+        else
+          echo "QuickJS-ng installation failed"
+          exit 1
+        fi

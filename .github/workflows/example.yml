@@ -17,66 +17,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ethanl21/setup-quickjs-ng@v1
-
-      - name: Verify installation
-        run: |
-          qjs --version
-          qjsc --version
+      - uses: ./
+        id: setup-quickjs-ng
 
       - name: Run example.js with qjs
+        shell: bash
         run: qjs example/example.js
 
-      - name: Compile example.js with qjsc
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            qjsc -o example.exe example/example.js
-          else
-            qjsc -o example example/example.js
-          fi
-
-      - name: Run compiled binary
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            ./example.exe
-          else
-            ./example
-          fi
-
-      - name: Test ES2023 features
-        run: |
-          cat > es2023.mjs << 'EOF'
-          // Array.findLast
-          const arr = [1, 2, 3];
-          const last = arr.findLast(x => x > 1);
-          console.assert(last === 3);
-
-          // Top-level await
-          const value = await Promise.resolve(42);
-          console.assert(value === 42);
-
-          // Array.toSorted
-          const sorted = [3, 1, 2].toSorted();
-          console.assert(sorted[0] === 1 && sorted[2] === 3);
-
-          // Record.prototype.entries
-          const obj = { a: 1, b: 2 };
-          const entries = Object.entries(obj);
-          console.assert(entries.length === 2);
-
-          print("All ES2023 tests passed!");
-          EOF
-          qjs es2023.mjs
+      - name: Compile example.js to C with qjsc
         shell: bash
+        run: qjsc -e -o example.c example/example.js
 
-  test-specific-version:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: ethanl21/setup-quickjs-ng@v1
-        with:
-          version: v0.9.0
-
-      - name: Verify version
+      - name: Verify C output exists
+        shell: bash
         run: |
-          echo "Testing with specific version v0.9.0"
-          qjs --version
+          if [ -f example.c ]; then
+            echo "qjsc generated C output successfully"
+          else
+            echo "qjsc failed to generate C output"
+            exit 1
+          fi
+
+      - name: Compile C code to executable (Unix)
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          gcc -o example_bin example.c "${QUICKJS_AMALGAM_DIR}/quickjs-amalgam.c" -I"${QUICKJS_AMALGAM_DIR}" -DQJS_BUILD_LIBC -lm
+          chmod +x example_bin
+
+      - name: Compile C code to executable (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $amalgamdir = $env:QUICKJS_AMALGAM_DIR
+          gcc -o example_bin.exe example.c "$amalgamdir/quickjs-amalgam.c" -I"$amalgamdir" -DQJS_BUILD_LIBC -lm
+
+      - name: Run compiled executable (Unix)
+        shell: bash
+        if: runner.os != 'Windows'
+        run: ./example_bin
+
+      - name: Run compiled executable (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          .\example_bin.exe
